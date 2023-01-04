@@ -33,6 +33,18 @@
 #include "net/ipv6/simple-udp.h"
 
 #include "sys/log.h"
+
+#include "unistd.h"
+#include "stdlib.h"
+
+/* Socket includes */
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <errno.h>
+
+#include "PacketDrillHandlerTask.h"
+
 #define LOG_MODULE "App"
 #define LOG_LEVEL LOG_LEVEL_INFO
 
@@ -40,7 +52,11 @@
 #define UDP_CLIENT_PORT	8765
 #define UDP_SERVER_PORT	5678
 
-static struct simple_udp_connection udp_conn;
+#define BACKLOG 5
+#define SOCKET_NAME "/tmp/mysocket1"
+#define BUF_SIZE 20
+
+//static struct simple_udp_connection udp_conn;
 
 PROCESS(udp_server_process, "UDP server");
 AUTOSTART_PROCESSES(&udp_server_process);
@@ -70,6 +86,99 @@ PROCESS_THREAD(udp_server_process, ev, data)
 
   /* Initialize DAG root */
   NETSTACK_ROUTING.root_start();
+
+  printf("PacketDrill Bridge Thread started...\n");
+
+  struct sockaddr_un addr;
+
+  unlink(SOCKET_NAME);
+
+  int sfd = socket(AF_UNIX, SOCK_STREAM, 0);
+
+  if (sfd == -1) {
+      printf("Error creating socket...\n");
+      return -1;
+  }
+
+  // Zero out the address, and set family and path.
+  memset(&addr, 0, sizeof(struct sockaddr_un));
+  addr.sun_family = AF_UNIX;
+  strcpy(addr.sun_path, SOCKET_NAME);
+
+  if (bind(sfd, (struct sockaddr *) &addr, sizeof(struct sockaddr_un)) == -1) {
+      printf("Error binding socket to port...\n");
+      return -1;
+  }
+
+  if (listen(sfd, BACKLOG) ==-1) {
+      printf("Error listening on socket...\n");
+      return -1;
+  }
+
+  for (;;) {
+    printf("Waiting to accept a connection...\n");
+
+    int cfd = accept(sfd, NULL, NULL);
+
+    if (cfd == -1) {
+      printf("Error accepting connection...\n");
+      return -1;
+    }
+
+    printf("accept returned with cfd %d...\n", cfd);
+
+    //
+    // Transfer data from connected socket to stdout until EOF 
+    //
+
+    ssize_t numRead;
+    struct SyscallPackage syscallPackage; 
+
+    while ((numRead = read(cfd, &syscallPackage, sizeof(struct SyscallPackage))) > 0) {
+
+      if (syscallPackage.bufferedMessage == 1) {
+        void *buffer = malloc(syscallPackage.bufferedCount);
+        ssize_t bufferCount = read(cfd, buffer, syscallPackage.bufferedCount);
+
+        if (bufferCount <= 0) {
+            FreeRTOS_debug_printf(("Error reading buffer content from socket\n"));
+        } else if (bufferCount != syscallPackage.bufferedCount) {
+            FreeRTOS_debug_printf(("Count of buffer not equal to expected count.\n"));
+        } else {
+            FreeRTOS_debug_printf(("Successfully read buffer count from socket.\n"));
+        }
+
+        syscallPackage.buffer = buffer;
+
+      }
+
+      struct SyscallResponsePackage syscallResponse;
+      handlePacketDrillCommand(&syscallPackage, &syscallResponse);
+
+      FreeRTOS_debug_printf(("Syscall response buffer received: %d...\n", syscallResponse.result));
+
+      int numWrote = send(cfd, &syscallResponse, sizeof(struct SyscallResponsePackage), MSG_NOSIGNAL);
+
+      if (numWrote == -1) {
+          FreeRTOS_debug_printf(("Error writing socket response...\n"));
+      } else {
+          FreeRTOS_debug_printf(("Successfully wrote socket response to Packetdrill...\n"));
+      }
+
+    }
+
+    if (numRead == 0) {
+      printf("About to unlink\n");
+    } else if (numRead == -1) {
+      printf("Error reading from socket with errno %d...\n", errno);
+    }
+
+    if (close(cfd) == -1) {
+      printf("Error closing socket...\n");
+    }
+
+  }
+
 
   /* Initialize UDP connection */
   simple_udp_register(&udp_conn, UDP_SERVER_PORT, NULL,
