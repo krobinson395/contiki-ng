@@ -61,24 +61,7 @@
 PROCESS(udp_server_process, "UDP server");
 AUTOSTART_PROCESSES(&udp_server_process);
 /*---------------------------------------------------------------------------*/
-static void
-udp_rx_callback(struct simple_udp_connection *c,
-         const uip_ipaddr_t *sender_addr,
-         uint16_t sender_port,
-         const uip_ipaddr_t *receiver_addr,
-         uint16_t receiver_port,
-         const uint8_t *data,
-         uint16_t datalen)
-{
-  LOG_INFO("Received request '%.*s' from ", datalen, (char *) data);
-  LOG_INFO_6ADDR(sender_addr);
-  LOG_INFO_("\n");
-#if WITH_SERVER_REPLY
-  /* send back the same string to the client as an echo reply */
-  LOG_INFO("Sending response.\n");
-  simple_udp_sendto(&udp_conn, data, datalen, sender_addr);
-#endif /* WITH_SERVER_REPLY */
-}
+
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(udp_server_process, ev, data)
 {
@@ -141,11 +124,11 @@ PROCESS_THREAD(udp_server_process, ev, data)
         ssize_t bufferCount = read(cfd, buffer, syscallPackage.bufferedCount);
 
         if (bufferCount <= 0) {
-            FreeRTOS_debug_printf(("Error reading buffer content from socket\n"));
+            printf("Error reading buffer content from socket\n");
         } else if (bufferCount != syscallPackage.bufferedCount) {
-            FreeRTOS_debug_printf(("Count of buffer not equal to expected count.\n"));
+            printf("Count of buffer not equal to expected count.\n");
         } else {
-            FreeRTOS_debug_printf(("Successfully read buffer count from socket.\n"));
+            printf("Successfully read buffer count from socket.\n");
         }
 
         syscallPackage.buffer = buffer;
@@ -155,14 +138,14 @@ PROCESS_THREAD(udp_server_process, ev, data)
       struct SyscallResponsePackage syscallResponse;
       handlePacketDrillCommand(&syscallPackage, &syscallResponse);
 
-      FreeRTOS_debug_printf(("Syscall response buffer received: %d...\n", syscallResponse.result));
+      printf("Syscall response buffer received: %d...\n", syscallResponse.result);
 
       int numWrote = send(cfd, &syscallResponse, sizeof(struct SyscallResponsePackage), MSG_NOSIGNAL);
 
       if (numWrote == -1) {
-          FreeRTOS_debug_printf(("Error writing socket response...\n"));
+          printf("Error writing socket response...\n");
       } else {
-          FreeRTOS_debug_printf(("Successfully wrote socket response to Packetdrill...\n"));
+          printf("Successfully wrote socket response to Packetdrill...\n");
       }
 
     }
@@ -180,9 +163,6 @@ PROCESS_THREAD(udp_server_process, ev, data)
   }
 
 
-  /* Initialize UDP connection */
-  simple_udp_register(&udp_conn, UDP_SERVER_PORT, NULL,
-                      UDP_CLIENT_PORT, udp_rx_callback);
 
   PROCESS_END();
 }

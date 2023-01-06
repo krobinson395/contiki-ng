@@ -32,13 +32,11 @@
 #include <arpa/inet.h>
 #include "stddef.h"
 
-#include "FreeRTOS_Stream_Buffer.h"
-
 /*
  * Create the PacketDrill handler task.
  */
 int resetPacketDrillTask();
-static void handlePacketDrillCommand(struct SyscallPackage *syscallPackage, struct SyscallResponsePackage *syscallResponse);
+
 
 
 
@@ -71,7 +69,10 @@ struct WritePackage {
 struct SendToPackage {
     int sockfd;
     int flags;
-    struct sockaddr addr;
+    union {
+        struct sockaddr_in addr;
+        struct sockaddr_in6 addr6;
+    };
     socklen_t addrlen;
 };
 
@@ -91,7 +92,11 @@ struct ClosePackage {
 };
 
 struct AcceptResponsePackage {
-    struct sockaddr addr;
+    union {
+        struct sockaddr_in addr;
+        struct sockaddr_in6 addr6;
+    };
+
     socklen_t addrlen;
 };
 
@@ -121,6 +126,8 @@ struct SyscallPackage {
         struct RecvFromPackage recvFromPackage;
     };
 };
+
+void handlePacketDrillCommand(struct SyscallPackage *syscallPackage, struct SyscallResponsePackage *syscallResponse);
 
 #endif /* PACKETDRILL_HANDLER_TASK_H */
 
