@@ -38,7 +38,9 @@
 #include <sys/ipc.h>
 #include <sys/msg.h>
 
+#include "contiki.h"
 #include "net/ipv6/simple-udp.h"
+#include <net/ipv6/tcp-socket.h>
 
 #define LOG_MODULE "App"
 #define LOG_LEVEL LOG_LEVEL_INFO
@@ -47,6 +49,7 @@ struct ContikiSocket {
     uint8_t initialized;
     union {
         struct simple_udp_connection *udp_conn;
+        struct tcp_socket *tcp_conn;
     };
 };
 
@@ -87,6 +90,42 @@ udp_rx_callback(struct simple_udp_connection *c,
 
 }
 
+/*****************************************************************************/
+static int
+tcp_rx_callback(struct tcp_socket *sock, void *ptr, const uint8_t *input, int len)
+{
+  LOG_INFO("RECV %d bytes\n", len);
+
+  return 0;
+}
+/*****************************************************************************/
+static void
+tcp_event_callback(struct tcp_socket *sock, void *ptr, tcp_socket_event_t event)
+{
+  LOG_INFO("TCP socket event: ");
+  switch(event) {
+  case TCP_SOCKET_CONNECTED:
+    LOG_INFO_("CONNECTED\n");
+    break;
+  case TCP_SOCKET_CLOSED:
+    LOG_INFO_("CLOSED\n");
+    break;
+  case TCP_SOCKET_TIMEDOUT:
+    LOG_INFO_("TIMED OUT\n");
+    break;
+  case TCP_SOCKET_ABORTED:
+    LOG_INFO_("ABORTED\n");
+    break;
+  case TCP_SOCKET_DATA_SENT:
+    LOG_INFO_("DATA SENT\n");
+    break;
+  default:
+    LOG_INFO_("UNKNOWN (%d)\n", (int)event);
+    break;
+  }
+  //tcp_socket_unregister(&server_sock);
+}
+
 void handlePacketDrillCommand(struct SyscallPackage *syscallPackage, struct SyscallResponsePackage *syscallResponse) {
 
 
@@ -106,14 +145,25 @@ void handlePacketDrillCommand(struct SyscallPackage *syscallPackage, struct Sysc
 
             /* Initialize UDP connection */
             struct simple_udp_connection *udp_conn = malloc(sizeof(struct simple_udp_connection));
-            socketResult= simple_udp_register(udp_conn, 0, NULL,
+            socketResult = simple_udp_register(udp_conn, 0, NULL,
                 0, udp_rx_callback);
             xSocket.udp_conn = udp_conn;
             xSocket.initialized = 1;
+        } else {
+            #define SOCKET_BUF_SIZE 128
+
+            struct tcp_socket *server_sock = malloc(sizeof(struct tcp_socket));
+            static uint8_t in_buf[SOCKET_BUF_SIZE];
+            static uint8_t out_buf[SOCKET_BUF_SIZE];
+            socketResult = tcp_socket_register(server_sock, NULL, in_buf, sizeof(in_buf),
+                                out_buf, sizeof(out_buf),
+                                tcp_rx_callback, tcp_event_callback);
+            xSocket.tcp_conn = server_sock;
+            xSocket.initialized = 1;
         }
 
-        if ( socketResult == 0 ) {
-            response = 0;
+        if ( socketResult != 1) {
+            response = -1;
             printf("Error creating socket...\n");
             syscallResponse->result = response;
             return;
@@ -142,7 +192,11 @@ void handlePacketDrillCommand(struct SyscallPackage *syscallPackage, struct Sysc
 
         int bindResult;
         if (xSocket.initialized != 0 && xSocket.udp_conn != NULL) {
-            udp_bind(xSocket.udp_conn->udp_conn, UIP_HTONS(sock_addr->sin_port));
+            printf("Binding socket to port %d...\n", sock_addr->sin_port);
+            udp_bind(xSocket.udp_conn->udp_conn, sock_addr->sin_port);
+            bindResult = 0;
+        } else if (xSocket.initialized != 0 && xSocket.tcp_conn != NULL) {
+            // No bind implementation for TCP yet
             bindResult = 0;
         } else {
             printf("Error binding to port...\n");
@@ -151,19 +205,28 @@ void handlePacketDrillCommand(struct SyscallPackage *syscallPackage, struct Sysc
 
         syscallResponse->result = bindResult;
 
-    } /*else if (strcmp(syscallPackage->syscallId, "socket_listen") == 0) {
+    } else if (strcmp(syscallPackage->syscallId, "socket_listen") == 0) {
 
         struct ListenPackage listenPackage = syscallPackage->listenPackage;
 
-        int listenResult = FreeRTOS_listen( socketArray[listenPackage.sockfd], listenPackage.backlog );
+        struct ContikiSocket xSocket = socketArray[listenPackage.sockfd];
 
-        if (listenResult < 0) {
-            FreeRTOS_debug_printf(("Error listening on socket with response: %d\n", listenResult));
+        int listenResult;
+        if (xSocket.initialized == 1 && xSocket.tcp_conn != NULL) {
+            listenResult = tcp_socket_listen(xSocket.tcp_conn, 0); // Seems like we need to specify the receiver port
+        } else {
+            listenResult = -1;
         }
 
-        syscallResponse->result = listenResult;
+        
 
-    } else if (strcmp(syscallPackage->syscallId, "socket_accept") == 0) {
+        if (listenResult < 0) {
+            printf("Error listening on socket with response: %d\n", listenResult);
+        }
+
+        syscallResponse->result = listenResult == 1 ? 0 : -1;
+
+    } /*else if (strcmp(syscallPackage->syscallId, "socket_accept") == 0) {
 
         struct AcceptPackage acceptPackage = syscallPackage->acceptPackage;
 
@@ -209,54 +272,45 @@ void handlePacketDrillCommand(struct SyscallPackage *syscallPackage, struct Sysc
         syscallResponse->result = response;
         syscallResponse->acceptResponse = acceptResponse;
 
-    } else if (strcmp(syscallPackage->syscallId, "socket_connect") == 0) {
+    }*/ else if (strcmp(syscallPackage->syscallId, "socket_connect") == 0) {
 
         struct BindPackage connectPackage = syscallPackage->connectPackage;
 
-        struct freertos_sockaddr xEchoServerAddress;
+        struct ContikiSocket xSocket = socketArray[connectPackage.sockfd];
 
-        struct sockaddr_in *sock_addr = (struct sockaddr_in *) &connectPackage.addr;
-        xEchoServerAddress.sin_port = sock_addr->sin_port;
-        uint32_t destinationIPAddress = getFreeRTOSSinAddr(sock_addr->sin_addr);
-        xEchoServerAddress.sin_addr = destinationIPAddress;
+        int connectResult = -1;
+        if (xSocket.initialized == 1 && xSocket.tcp_conn != NULL) {
+            uip_ipaddr_t dest_ipaddr;
+            memcpy(dest_ipaddr.u8, &connectPackage.addr6.sin6_addr, 16);
 
-        if (xIsIPInARPCache(xEchoServerAddress->sin_addr) == pdFALSE) {
-            FreeRTOS_debug_printf(("Connect IP address not in ARP cache...Adding now...\n"));
-            MACAddress_t destinationMacAddress;
-            memcpy(&destinationMacAddress, destinationMacBytes, sizeof(MACAddress_t));
-            vARPRefreshCacheEntry( &destinationMacAddress, destinationIPAddress );
-        } else {
-            FreeRTOS_debug_printf(("Connect IP address found in ARP cache...\n"));
+            connectResult = tcp_socket_connect(xSocket.tcp_conn, &dest_ipaddr, uip_htons(connectPackage.addr6.sin6_port));
         }
-
-        FreeRTOS_setsockopt( socketArray[connectPackage.sockfd], 0, FREERTOS_SO_RCVTIMEO, &xConnectTimeOut, sizeof( xReceiveTimeOut ) );
-
-        int connectResult = FreeRTOS_connect( socketArray[connectPackage.sockfd],
-                        &xEchoServerAddress, sizeof( xEchoServerAddress ) );
-
-        FreeRTOS_setsockopt( socketArray[connectPackage.sockfd], 0, FREERTOS_SO_RCVTIMEO, &xReceiveTimeOut, sizeof( xReceiveTimeOut ) );
 
         if (connectResult < 0) {
-            FreeRTOS_debug_printf(("Error connecting to socket with response: %d\n", connectResult));
+            printf("Error connecting to socket with response: %d\n", connectResult);
         } else {
-            FreeRTOS_debug_printf(("Successfully connected to socket\n"));
+            printf("Successfully connected to socket\n");
 
         }
 
-        syscallResponse->result = connectResult;
+        syscallResponse->result = connectResult == 1 ? 0 : -1;
     } else if (strcmp(syscallPackage->syscallId, "socket_write") == 0) {
 
         struct WritePackage writePackage = syscallPackage->writePackage;
 
-        int writeResult = FreeRTOS_send(socketArray[writePackage.sockfd],
-                                syscallPackage->buffer, syscallPackage->bufferedCount, 0);
+        struct ContikiSocket xSocket = socketArray[writePackage.sockfd];
+
+        int writeResult = -1;
+        if (xSocket.initialized == 1 && xSocket.tcp_conn != NULL) {
+            writeResult = tcp_socket_send(xSocket.tcp_conn, syscallPackage->buffer, syscallPackage->bufferedCount);
+        } 
 
         if (writeResult < 0) {
-            FreeRTOS_debug_printf(("Error writing to socket with response: %d\n", writeResult));
+            printf("Error writing to socket with response: %d\n", writeResult);
         }
 
         syscallResponse->result = writeResult;
-    }*/ else if (strcmp(syscallPackage->syscallId, "socket_sendto") == 0) {
+    } else if (strcmp(syscallPackage->syscallId, "socket_sendto") == 0) {
 
         struct SendToPackage sendtoPackage = syscallPackage->sendToPackage;
 
@@ -269,33 +323,35 @@ void handlePacketDrillCommand(struct SyscallPackage *syscallPackage, struct Sysc
             uip_ipaddr_t dest_ipaddr;
             memcpy(dest_ipaddr.u8, &sendtoPackage.addr6.sin6_addr, 16);
 
-            writeResult = simple_udp_sendto_port(xSocket.udp_conn, syscallPackage->buffer, syscallPackage->bufferedCount, 
-            &dest_ipaddr, sendtoPackage.addr6.sin6_port);
+            simple_udp_sendto_port(xSocket.udp_conn, syscallPackage->buffer, syscallPackage->bufferedCount, 
+            &dest_ipaddr, uip_ntohs(sendtoPackage.addr6.sin6_port));
+
+            writeResult = syscallPackage->bufferedCount;
 
         }
 
         syscallResponse->result = writeResult;
-    } /*else if (strcmp(syscallPackage->syscallId, "socket_read") == 0) {
+    } else if (strcmp(syscallPackage->syscallId, "socket_read") == 0) {
 
-        struct ReadPackage readPackage = syscallPackage.readPackage;
+        struct ReadPackage readPackage = syscallPackage->readPackage;
 
-        char *readBuffer = pvPortMalloc(readPackage.count);
+        char *readBuffer = malloc(readPackage.count);
 
-        int result = FreeRTOS_recv( socketArray[readPackage.sockfd],
-                                    (void *) readBuffer,
-                                    readPackage.count,
-                                    0 );
-
-        if (result < 0 ) {
-            FreeRTOS_debug_printf(("Error reading from socket with result: %d\n", result));
-        }
-
+        int result = 0; // Hook up with evemt
     
-        vPortFree(readBuffer);
+        free(readBuffer);
 
         syscallResponse->result = result;
 
-    } */else if (strcmp(syscallPackage->syscallId, "socket_recvfrom") == 0) {
+    } else if (strcmp(syscallPackage->syscallId, "socket_recvfrom") == 0) {
+
+        // if (rxData.pending_data != 1) {
+        //     printf("About to yield...\n");
+        //     PROCESS_WAIT_EVENT();
+        // }
+
+        printf("Just woke up from yielding...\n");
+
 
         if (rxData.pending_data == 1) {
             struct sockaddr_in6 addr;
@@ -314,45 +370,49 @@ void handlePacketDrillCommand(struct SyscallPackage *syscallPackage, struct Sysc
 
         
 
-    } /*else if (strcmp(syscallPackage->syscallId, "socket_close") == 0){
+    } else if (strcmp(syscallPackage->syscallId, "socket_close") == 0){
 
         struct ClosePackage closePackage = syscallPackage->closePackage;
 
-        Socket_t socketToClose = socketArray[closePackage.sockfd];
+        struct ContikiSocket xSocket = socketArray[closePackage.sockfd];
 
-        int closeResult = FreeRTOS_shutdown(socketToClose, 0);
-
-        if (closeResult != 0) {
-            FreeRTOS_debug_printf(("Error closing socket with response: %d\n", closeResult));
+        int closeResult = -1;
+        if (xSocket.initialized == 1 && xSocket.tcp_conn != NULL) {
+            closeResult = tcp_socket_close(xSocket.tcp_conn);
         }
 
-        syscallResponse->result = closeResult;
-    }*/ else if (strcmp(syscallPackage->syscallId, "freertos_init") == 0){
+        if (closeResult != 0) {
+            printf("Error closing socket with response: %d\n", closeResult);
+        }
+
+        syscallResponse->result = closeResult == 1 ? 0 : -1;
+    } else if (strcmp(syscallPackage->syscallId, "freertos_init") == 0){
  
-    int sizeSocketArray = resetPacketDrillTask();
+        int sizeSocketArray = resetPacketDrillTask();
 
-    syscallResponse->result = sizeSocketArray;
-} else {
-        syscallResponse->result = 0;
-}
-
-
-
-    
-
+        syscallResponse->result = sizeSocketArray;
+    } else {
+            syscallResponse->result = 0;
+    }
 
 }
 
 int resetPacketDrillTask() {
     int sizeSocketArray = socketCounter - 3;
     if (sizeSocketArray > 0) {
+        
+        //We want to close all the socket we opened during this session 
+        for (int counter = 3; counter < socketCounter; counter++) {
+            struct ContikiSocket xSocket = socketArray[counter];
+            if (xSocket.initialized) {
+                if (xSocket.tcp_conn != NULL) {
+                    tcp_socket_unregister(xSocket.tcp_conn);
+                } 
+            }
+        }
+
         memset(socketArray, 0, MAX_SOCKET_ARRAY * sizeof(struct ContikiSocket));
 
-        /* We want to close all the socket we opened during this session 
-        for (int counter = 0; counter < sizeSocketArray; counter++) {
-            Socket_t socket = socketArray[counter + 3];
-            FreeRTOS_closesocket(socket);
-        }*/
     }
 
     socketCounter = 3;

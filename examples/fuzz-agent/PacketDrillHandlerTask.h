@@ -52,7 +52,10 @@ struct AcceptPackage {
 
 struct BindPackage {
     int sockfd;
-    struct sockaddr addr;
+    union {
+        struct sockaddr_in addr;
+        struct sockaddr_in6 addr6;
+    };
     socklen_t addrlen;
 };
 
