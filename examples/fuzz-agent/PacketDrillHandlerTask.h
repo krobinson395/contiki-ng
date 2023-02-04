@@ -32,6 +32,9 @@
 #include <arpa/inet.h>
 #include "stddef.h"
 
+#include "net/ipv6/simple-udp.h"
+#include <net/ipv6/tcp-socket.h>
+
 /*
  * Create the PacketDrill handler task.
  */
@@ -130,7 +133,8 @@ struct SyscallPackage {
     };
 };
 
-void handlePacketDrillCommand(struct SyscallPackage *syscallPackage, struct SyscallResponsePackage *syscallResponse);
+void handlePacketDrillCommand2(struct SyscallPackage *syscallPackage, struct SyscallResponsePackage *syscallResponse);
+
 
 #endif /* PACKETDRILL_HANDLER_TASK_H */
 
