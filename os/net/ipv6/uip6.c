@@ -1843,11 +1843,11 @@ uip_process(uint8_t flag)
 
   /* Check that the indicated length of the TCP header is not too large
      for the total packet length. */
-  if(uip_len < c + UIP_IPH_LEN) {
-    LOG_WARN("Dropping TCP packet with too large data offset (%u bytes)\n",
-             (unsigned)c);
-    goto drop;
-  }
+  // if(uip_len < c + UIP_IPH_LEN) {
+  //   LOG_WARN("Dropping TCP packet with too large data offset (%u bytes)\n",
+  //            (unsigned)c);
+  //   goto drop;
+  // }
 
   /* uip_len will contain the length of the actual TCP data. This is
      calculated by subtracing the length of the TCP header (in
