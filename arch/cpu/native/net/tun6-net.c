@@ -432,15 +432,22 @@ static int prvOpenSelectedNetworkInterface( pcap_if_t * pxAllNetworkInterfaces )
 {
     int ret = pdFAIL;
 
+    const char *interface_name = getenv("TAP_INTERFACE_NAME");
+
+    if (interface_name == NULL) {
+        interface_name = "tun0";
+    }
+
+
     /* Open the selected interface. */
-    if( prvOpenInterface( "tun0" ) == pdPASS )
+    if( prvOpenInterface( interface_name ) == pdPASS )
     {
-        printf( "Successfully opened interface tun0.\n");
+        printf( "Successfully opened interface %s.\n", interface_name);
         ret = pdPASS;
     }
     else
     {
-        printf("Failed to open interface tun0.\n");
+        printf("Failed to open interface %s.\n", interface_name);
     }
 
     return ret;

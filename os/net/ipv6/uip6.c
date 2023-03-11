@@ -943,6 +943,48 @@ uip_update_ttl(void)
     return true;
   }
 }
+
+uint8_t checkFuzzTerminatingSignal() {
+    
+    uint8_t *ethernetBuffer = uip_buf;
+
+    uint8_t termination_payload[5] = {0x11, 0x22, 0x11, 0x33, 0x44};
+
+    uint8_t termination_payload_offset = sizeof(struct uip_ip_hdr) + sizeof(struct uip_udp_hdr);
+
+    // We confirm packet contains termination payload
+    if (uip_len < termination_payload_offset + sizeof(termination_payload)) {
+        return false;
+    }
+
+    uint8_t comparisonBytes[5];
+    memcpy(comparisonBytes, ethernetBuffer + termination_payload_offset, sizeof(termination_payload));            // Get destination port field
+    
+    if (memcmp(comparisonBytes, termination_payload, sizeof(termination_payload)) != 0) {
+        // The extracted bytes are not equal
+        return false;
+    }
+
+    printf("Contiki receives terminating signal...\n");
+
+    // swap IP address in IPv4 header of ethernetBuffer
+    uint8_t ipAddress[16];
+    memcpy(ipAddress, ethernetBuffer + 8, 16);
+    memcpy(ethernetBuffer + 8, ethernetBuffer + 24, 16);
+    memcpy(ethernetBuffer + 24, ipAddress, 16);
+
+    // swap UDP ports in UDP header of ethernetBuffer
+    uint8_t udpPorts[2];
+    memcpy(udpPorts, ethernetBuffer + 40, 2);
+    memcpy(ethernetBuffer + 40, ethernetBuffer + 42, 2);
+    memcpy(ethernetBuffer + 42, udpPorts, 2);
+
+    // Send directly to network interface
+    NETSTACK_NETWORK.output(NULL);
+    return true;
+}
+
+
 /*---------------------------------------------------------------------------*/
 void
 uip_process(uint8_t flag)
@@ -1408,6 +1450,11 @@ uip_process(uint8_t flag)
     default:
       goto bad_hdr;
     }
+  }
+
+  // TODO: Process fuzz terminating signal here (if any)
+  if (checkFuzzTerminatingSignal() == true) {
+    goto drop;
   }
 
   /* Process upper-layer input */
