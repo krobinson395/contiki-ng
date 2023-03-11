@@ -42,6 +42,7 @@
 
 #include "net/netstack.h"
 #include "net/ipv6/uip.h"
+#include "sanitizer/asan_interface.h"
 
 /* ======================== Macro Definitions =============================== */
 #if ( ipconfigETHERNET_DRIVER_FILTERS_FRAME_TYPES == 0 )
@@ -562,8 +563,9 @@ static void pcap_callback( unsigned char * user,
     if ( pkt_header->caplen <= 1214) {
         // Add received packet to buffer
         memcpy(uip_buf, pkt_data, pkt_header->len);
-        printf("TUN data incoming read: %d\n", pkt_header->len);
         uip_len = pkt_header->len;
+        ASAN_POISON_MEMORY_REGION(uip_buf + uip_len, UIP_BUFSIZE - uip_len);
+        printf("TUN data incoming read: %d\n", pkt_header->len);
         tcpip_input();
     }
 }

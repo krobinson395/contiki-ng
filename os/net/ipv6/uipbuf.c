@@ -35,6 +35,8 @@
 #include <string.h>
 #include <stdio.h>
 
+#include "sanitizer/asan_interface.h"
+
 /*---------------------------------------------------------------------------*/
 
 static uint16_t uipbuf_attrs[UIPBUF_ATTR_MAX];
@@ -48,6 +50,7 @@ uipbuf_clear(void)
   uip_ext_len = 0;
   uip_last_proto = 0;
   uipbuf_clear_attr();
+  ASAN_UNPOISON_MEMORY_REGION(uip_buf, UIP_BUFSIZE);
 }
 /*---------------------------------------------------------------------------*/
 bool
