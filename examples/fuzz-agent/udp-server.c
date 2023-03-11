@@ -216,6 +216,23 @@ tcp_event_callback(struct tcp_socket *sock, void *ptr, tcp_socket_event_t event)
   //tcp_socket_unregister(&server_sock);
 }
 
+char *getSocketName() {
+    char *socket_name;
+
+    const char *interface_name = getenv("TAP_INTERFACE_NAME");
+
+    if (interface_name != NULL) {
+        
+        int len = strlen(interface_name) + strlen("/tmp/socket-") + 1;
+        socket_name = malloc(len * sizeof(char));
+        snprintf(socket_name, len, "/tmp/socket-%s", interface_name);
+    } else {
+        socket_name = strdup("/tmp/socket-default");
+    }
+
+    return socket_name;
+}
+
 /*---------------------------------------------------------------------------*/
 
 /*---------------------------------------------------------------------------*/
@@ -236,7 +253,9 @@ PROCESS_THREAD(udp_server_process, ev, data)
 
   struct sockaddr_un addr;
 
-  unlink(SOCKET_NAME);
+  char *socket_name = getSocketName();
+
+  unlink(socket_name);
 
   sfd = socket(AF_UNIX, SOCK_STREAM, 0);
 
@@ -248,7 +267,8 @@ PROCESS_THREAD(udp_server_process, ev, data)
   // Zero out the address, and set family and path.
   memset(&addr, 0, sizeof(struct sockaddr_un));
   addr.sun_family = AF_UNIX;
-  strcpy(addr.sun_path, SOCKET_NAME);
+  strcpy(addr.sun_path, socket_name);
+  free(socket_name);
 
   if (bind(sfd, (struct sockaddr *) &addr, sizeof(struct sockaddr_un)) == -1) {
       printf("Error binding socket to port...\n");
