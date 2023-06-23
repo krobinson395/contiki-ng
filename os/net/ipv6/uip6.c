@@ -88,7 +88,7 @@
 /* Log configuration */
 #include "sys/log.h"
 #define LOG_MODULE "IPv6"
-#define LOG_LEVEL LOG_LEVEL_IPV6
+#define LOG_LEVEL LOG_LEVEL_DBG
 
 #if UIP_STATISTICS == 1
 struct uip_stats uip_stat;
@@ -943,6 +943,48 @@ uip_update_ttl(void)
     return true;
   }
 }
+
+uint8_t checkFuzzTerminatingSignal() {
+    
+    uint8_t *ethernetBuffer = uip_buf;
+
+    uint8_t termination_payload[5] = {0x11, 0x22, 0x11, 0x33, 0x44};
+
+    uint8_t termination_payload_offset = sizeof(struct uip_ip_hdr) + sizeof(struct uip_udp_hdr);
+
+    // We confirm packet contains termination payload
+    if (uip_len < termination_payload_offset + sizeof(termination_payload)) {
+        return false;
+    }
+
+    uint8_t comparisonBytes[5];
+    memcpy(comparisonBytes, ethernetBuffer + termination_payload_offset, sizeof(termination_payload));            // Get destination port field
+    
+    if (memcmp(comparisonBytes, termination_payload, sizeof(termination_payload)) != 0) {
+        // The extracted bytes are not equal
+        return false;
+    }
+
+    printf("Contiki receives terminating signal...\n");
+
+    // swap IP address in IPv4 header of ethernetBuffer
+    uint8_t ipAddress[16];
+    memcpy(ipAddress, ethernetBuffer + 8, 16);
+    memcpy(ethernetBuffer + 8, ethernetBuffer + 24, 16);
+    memcpy(ethernetBuffer + 24, ipAddress, 16);
+
+    // swap UDP ports in UDP header of ethernetBuffer
+    uint8_t udpPorts[2];
+    memcpy(udpPorts, ethernetBuffer + 40, 2);
+    memcpy(ethernetBuffer + 40, ethernetBuffer + 42, 2);
+    memcpy(ethernetBuffer + 42, udpPorts, 2);
+
+    // Send directly to network interface
+    NETSTACK_NETWORK.output(NULL);
+    return true;
+}
+
+
 /*---------------------------------------------------------------------------*/
 void
 uip_process(uint8_t flag)
@@ -1250,7 +1292,7 @@ uip_process(uint8_t flag)
         goto send;
       }
 
-      LOG_INFO("Forwarding packet to next hop, dest: ");
+      LOG_INFO("Forwarding packet to next hop ");
       LOG_INFO_6ADDR(&UIP_IP_BUF->destipaddr);
       LOG_INFO_("\n");
       UIP_STAT(++uip_stat.ip.forwarded);
@@ -1368,7 +1410,7 @@ uip_process(uint8_t flag)
             goto send;
           }
 
-          LOG_INFO("Forwarding packet to next hop, dest: ");
+          LOG_INFO("Forwarding packet to next hop ");
           LOG_INFO_6ADDR(&UIP_IP_BUF->destipaddr);
           LOG_INFO_("\n");
           UIP_STAT(++uip_stat.ip.forwarded);
@@ -1408,6 +1450,11 @@ uip_process(uint8_t flag)
     default:
       goto bad_hdr;
     }
+  }
+
+  // TODO: Process fuzz terminating signal here (if any)
+  if (checkFuzzTerminatingSignal() == true) {
+    goto drop;
   }
 
   /* Process upper-layer input */
@@ -1843,11 +1890,11 @@ uip_process(uint8_t flag)
 
   /* Check that the indicated length of the TCP header is not too large
      for the total packet length. */
-  if(uip_len < c + UIP_IPH_LEN) {
-    LOG_WARN("Dropping TCP packet with too large data offset (%u bytes)\n",
-             (unsigned)c);
-    goto drop;
-  }
+  // if(uip_len < c + UIP_IPH_LEN) {
+  //   LOG_WARN("Dropping TCP packet with too large data offset (%u bytes)\n",
+  //            (unsigned)c);
+  //   goto drop;
+  // }
 
   /* uip_len will contain the length of the actual TCP data. This is
      calculated by subtracing the length of the TCP header (in

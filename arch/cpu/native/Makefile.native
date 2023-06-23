@@ -4,7 +4,7 @@ CONTIKI_SOURCEFILES += rtimer-arch.c watchdog.c eeprom.c int-master.c
 CONTIKI_SOURCEFILES += gpio-hal-arch.c
 
 ### Compiler definitions
-CC       = gcc
+CC       ?= gcc
 CXX      = g++
 ifdef LD_OVERRIDE
   LD     = $(LD_OVERRIDE)
@@ -42,7 +42,7 @@ ifeq ($(NATIVE_CAN_OPTIIMIZE),1)
   ifeq ($(SMALL),1)
     CFLAGS += -Os
   else
-    CFLAGS += -O2
+    CFLAGS += -O0
   endif
 endif
 

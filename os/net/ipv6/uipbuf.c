@@ -33,6 +33,11 @@
 #include "net/ipv6/uip.h"
 #include "net/ipv6/uipbuf.h"
 #include <string.h>
+#include <stdio.h>
+
+#include "sanitizer/asan_interface.h"
+
+#include "sanitizer/asan_interface.h"
 
 /*---------------------------------------------------------------------------*/
 
@@ -47,6 +52,7 @@ uipbuf_clear(void)
   uip_ext_len = 0;
   uip_last_proto = 0;
   uipbuf_clear_attr();
+  ASAN_UNPOISON_MEMORY_REGION(uip_buf, UIP_BUFSIZE);
 }
 /*---------------------------------------------------------------------------*/
 bool
@@ -118,9 +124,10 @@ uipbuf_get_next_header(uint8_t *buffer, uint16_t size, uint8_t *protocol, bool s
 
   /* Check if the buffer is large enough for the next header */
   if(uip_is_proto_ext_hdr(*protocol)) {
-    if(curr_hdr_len + sizeof(struct uip_ext_hdr) > size) {
-      return NULL;
-    }
+    // if(curr_hdr_len + sizeof(struct uip_ext_hdr) > size) {
+    //   printf("Check has been triggered...\n");
+    //   return NULL;
+    // }
     next_ext = (struct uip_ext_hdr *)next_header;
     next_hdr_len = (next_ext->len << 3) + 8;
   } else {

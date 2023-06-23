@@ -32,8 +32,9 @@ include $(CONTIKI)/Makefile.dir-variables
 WERROR ?= 1
 
 # Disable Clang by default.
-CLANG ?= 0
-
+CLANG ?= 1
+CLANG = 1
+CC= clang
 include $(CONTIKI)/Makefile.identify-target
 
 ### Include Makefile.tools to pull in targets that allow us to build tools dir
@@ -133,7 +134,7 @@ ifneq ($(MAKECMDGOALS),clean)
   ifeq ($(CLANG),1)
     # Use GCC sysroot unless user specified something else.
     ifndef SYSROOT
-      SYSROOT := $(shell $(CC) $(CFLAGS) --print-sysroot)
+      SYSROOT := $(shell gcc  --print-sysroot)
     endif
     # Default to the most recent Clang in Ubuntu.
     CLANG_CC ?= clang-14
@@ -570,7 +571,7 @@ TARGET_LIBEXTRAS = $(LD_START_GROUP) $(TARGET_LIBFILES) $(LD_END_GROUP)
 $(BUILD_DIR_BOARD)/%.$(TARGET): LIBNAME ?= $@
 $(BUILD_DIR_BOARD)/%.$(TARGET): $(OBJECTDIR)/%.o $(LDSCRIPT) $(PROJECT_OBJECTFILES) $(PROJECT_LIBRARIES) $(CONTIKI_OBJECTFILES)
 	$(TRACE_LD)
-	$(Q)$(LD) $(LDFLAGS) $(TARGET_STARTFILES) $(sort ${filter-out $(LDSCRIPT) %.a,$^}) ${filter %.a,$^} $(TARGET_LIBEXTRAS) -o $(LIBNAME)
+	$(Q)$(LD) $(TARGET_STARTFILES) $(sort ${filter-out $(LDSCRIPT) %.a,$^}) ${filter %.a,$^} $(TARGET_LIBEXTRAS) $(LDFLAGS) -o $(LIBNAME)
 ifdef BINARY_SIZE_LOGFILE
 	$(Q)$(SIZE) $(LIBNAME) | grep $(BUILD_DIR_BOARD) >> $(BINARY_SIZE_LOGFILE)
 endif

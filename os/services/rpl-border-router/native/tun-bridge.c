@@ -243,6 +243,7 @@ tun_input(unsigned char *data, int maxlen)
   if((size = read(tunfd, data, maxlen)) == -1) {
     err(1, "tun_input: read");
   }
+  printf("Received data %d bytes...\n", size);
   return size;
 }
 /*---------------------------------------------------------------------------*/
@@ -255,6 +256,7 @@ static int
 output(void)
 {
   LOG_DBG("SUT: %u\n", uip_len);
+  printf("Sending data %d bytes...\n", uip_len);
   if(uip_len > 0) {
     return tun_output(uip_buf, uip_len);
   }
