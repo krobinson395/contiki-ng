@@ -18,8 +18,8 @@ ifeq ($(WERROR),1)
 CFLAGSWERROR=-Werror
 endif
 CFLAGSNO = -Wall -g -I/usr/local/include $(CFLAGSWERROR)
-CFLAGS  += $(CFLAGSNO) -pthread
-LDFLAGS += -pthread
+CFLAGS  += $(CFLAGSNO) -pthread -lpcap
+LDFLAGS += -pthread -lpcap
 
 ### Are we building with code size optimisations?
 SMALL ?= 0
