@@ -69,11 +69,17 @@ int
 #if PLATFORM_MAIN_ACCEPTS_ARGS
 main(int argc, char **argv)
 {
+  signal(SIGTERM, handler);
+  signal(SIGHUP, handler);
+  signal(SIGINT, handler);
   platform_process_args(argc, argv);
 #else
 main(void)
 {
 #endif
+  signal(SIGTERM, handler);
+  signal(SIGHUP, handler);
+  signal(SIGINT, handler);
   platform_init_stage_one();
 
   clock_init();
@@ -186,6 +192,10 @@ main(void)
 #endif
 
   return 0;
+}
+void handler(int signum)
+{
+	exit(0);
 }
 /*---------------------------------------------------------------------------*/
 /**
