@@ -59,12 +59,17 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include <signal.h>
 /*---------------------------------------------------------------------------*/
 /* Log configuration */
 #include "sys/log.h"
 #define LOG_MODULE "Main"
 #define LOG_LEVEL LOG_LEVEL_MAIN
 /*---------------------------------------------------------------------------*/
+void handler(int signum)
+{
+	exit(0);
+}
 int
 #if PLATFORM_MAIN_ACCEPTS_ARGS
 main(int argc, char **argv)
@@ -193,10 +198,7 @@ main(void)
 
   return 0;
 }
-void handler(int signum)
-{
-	exit(0);
-}
+
 /*---------------------------------------------------------------------------*/
 /**
  * @}
